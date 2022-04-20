@@ -107,16 +107,28 @@ class FashionCNN(nn.Module):
         return out
 
 
+# Function to make hooks
+activation = {}
+def get_activation(name):
+    def hook(model, input, output):
+        activation[name] = output.detach()
+    return hook
+
 model = FashionCNN()
 model.to(device)
 
+# Attaching hooks
+model.fc1.register_forward_hook(get_activation('fc1'))
+model.fc2.register_forward_hook(get_activation('fc2'))
+model.fc3.register_forward_hook(get_activation('fc3'))
+
 error = nn.CrossEntropyLoss()
 
-learning_rate = 0.001
+learning_rate = 0.0001
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 print(model)
 
-num_epochs = 5
+num_epochs = 10
 count = 0
 # Lists for visualization of loss and accuracy 
 loss_list = []
@@ -126,6 +138,8 @@ accuracy_list = []
 # Lists for knowing classwise accuracy
 predictions_list = []
 labels_list = []
+
+all_fc1, all_fc2, all_fc3 = [], [], []
 
 for epoch in range(num_epochs):
     for images, labels in train_loader:
@@ -152,78 +166,102 @@ for epoch in range(num_epochs):
     
     # Testing the model
     
-        if not (count % 50):    # It's same as "if count % 50 == 0"
-            total = 0
-            correct = 0
+        # if not (count % 50):    # It's same as "if count % 50 == 0"
+        #     total = 0
+        #     correct = 0
         
-            for images, labels in test_loader:
-                images, labels = images.to(device), labels.to(device)
-                labels_list.append(labels)
+        #     for images, labels in test_loader:
+        #         images, labels = images.to(device), labels.to(device)
+        #         labels_list.append(labels)
             
-                test = Variable(images.view(100, 1, 28, 28))
+        #         test = Variable(images.view(100, 1, 28, 28))
             
-                outputs = model(test)
+        #         outputs = model(test)
             
-                predictions = torch.max(outputs, 1)[1].to(device)
-                predictions_list.append(predictions)
-                correct += (predictions == labels).sum()
+        #         predictions = torch.max(outputs, 1)[1].to(device)
+        #         predictions_list.append(predictions)
+        #         correct += (predictions == labels).sum()
             
-                total += len(labels)
+        #         total += len(labels)
             
-            accuracy = correct * 100 / total
-            loss_list.append(loss.data)
-            iteration_list.append(count)
-            accuracy_list.append(accuracy)
+        #     accuracy = correct * 100 / total
+        #     loss_list.append(loss.data)
+        #     iteration_list.append(count)
+        #     accuracy_list.append(accuracy)
         
-        if not (count % 500):
-            print("Iteration: {}, Loss: {}, Accuracy: {}%".format(count, loss.data, accuracy))
+        # if not (count % 500):
+        #     print("Iteration: {}, Loss: {}, Accuracy: {}%".format(count, loss.data, accuracy))
 
+    epoch_fc1, epoch_fc2, epoch_fc3 = [], [], []
+    activation = {}
+    # After epoch collect vectors:
+    for images, labels in test_loader:
+        images, labels = images.to(device), labels.to(device)
+        labels_list.append(labels)
+    
+        test = Variable(images.view(100, 1, 28, 28))
+    
+        outputs = model(test)
+
+        # Pass activations through KAC models
+        fc1 = torch.clone(activation['fc1']).detach().cpu().numpy()
+        fc2 = torch.clone(activation['fc2']).detach().cpu().numpy()
+        fc3 = torch.clone(activation['fc3']).detach().cpu().numpy()
+
+        epoch_fc1.append(fc1), epoch_fc2.append(fc2), epoch_fc3.append(fc3)
+    all_fc1.append(epoch_fc1), all_fc2.append(epoch_fc2), all_fc3.append(epoch_fc3)
+
+print(len(all_fc1[0]))
+
+np.save('./fc1.npy', np.array(all_fc1))
+np.save('./fc2.npy', np.array(all_fc2))
+np.save('./fc3.npy', np.array(all_fc3))
 
 # torch.save(model, './models/model.t7')
 
-plt.plot(iteration_list, loss_list)
-plt.xlabel("No. of Iteration")
-plt.ylabel("Loss")
-plt.title("Iterations vs Loss")
-plt.show()
+# plt.plot(iteration_list, loss_list)
+# plt.xlabel("No. of Iteration")
+# plt.ylabel("Loss")
+# plt.title("Iterations vs Loss")
+# plt.show()
 
-plt.plot(iteration_list, accuracy_list)
-plt.xlabel("No. of Iteration")
-plt.ylabel("Accuracy")
-plt.title("Iterations vs Accuracy")
-plt.show()
+# plt.plot(iteration_list, accuracy_list)
+# plt.xlabel("No. of Iteration")
+# plt.ylabel("Accuracy")
+# plt.title("Iterations vs Accuracy")
+# plt.show()
 
-class_correct = [0. for _ in range(10)]
-total_correct = [0. for _ in range(10)]
+# class_correct = [0. for _ in range(10)]
+# total_correct = [0. for _ in range(10)]
 
-with torch.no_grad():
-    for images, labels in test_loader:
-        images, labels = images.to(device), labels.to(device)
-        test = Variable(images)
-        outputs = model(test)
-        predicted = torch.max(outputs, 1)[1]
-        c = (predicted == labels).squeeze()
+# with torch.no_grad():
+#     for images, labels in test_loader:
+#         images, labels = images.to(device), labels.to(device)
+#         test = Variable(images)
+#         outputs = model(test)
+#         predicted = torch.max(outputs, 1)[1]
+#         c = (predicted == labels).squeeze()
         
-        for i in range(100):
-            label = labels[i]
-            class_correct[label] += c[i].item()
-            total_correct[label] += 1
+#         for i in range(100):
+#             label = labels[i]
+#             class_correct[label] += c[i].item()
+#             total_correct[label] += 1
         
-for i in range(10):
-    print("Accuracy of {}: {:.2f}%".format(output_label(i), class_correct[i] * 100 / total_correct[i]))
+# for i in range(10):
+#     print("Accuracy of {}: {:.2f}%".format(output_label(i), class_correct[i] * 100 / total_correct[i]))
 
-from itertools import chain 
+# from itertools import chain 
 
-predictions_l = [predictions_list[i].tolist() for i in range(len(predictions_list))]
-labels_l = [labels_list[i].tolist() for i in range(len(labels_list))]
-predictions_l = list(chain.from_iterable(predictions_l))
-labels_l = list(chain.from_iterable(labels_l))
+# predictions_l = [predictions_list[i].tolist() for i in range(len(predictions_list))]
+# labels_l = [labels_list[i].tolist() for i in range(len(labels_list))]
+# predictions_l = list(chain.from_iterable(predictions_l))
+# labels_l = list(chain.from_iterable(labels_l))
 
-import sklearn.metrics as metrics
+# import sklearn.metrics as metrics
 
-confusion_matrix(labels_l, predictions_l)
-print("Classification report for CNN :\n%s\n"
-      % (metrics.classification_report(labels_l, predictions_l)))
+# confusion_matrix(labels_l, predictions_l)
+# print("Classification report for CNN :\n%s\n"
+#       % (metrics.classification_report(labels_l, predictions_l)))
 
 
 
